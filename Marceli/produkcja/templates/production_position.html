@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{prod_pos}}</title>
+</head>
+<body>
+<h1>{{prod_pos}}</h1>
+<p><a href="{{ prod_pos.product.link }}">{{prod_pos}}</a></p>
+<ul>
+    {% for inv_pos in prod_pos.invoice_positions %}
+        <li> {{ inv_pos.invoice.date}} - {{ inv_pos.invoice}} - {{ inv_pos.quantity}} - {{ inv_pos.total_price}}
+            {{ inv_pos.invoice.currency}}</li>
+    {% endfor %}
+</ul>
+</body>
+</html>
