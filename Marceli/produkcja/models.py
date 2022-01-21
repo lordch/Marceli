@@ -4,12 +4,17 @@ from django.db import models
 from django.core.validators import MaxValueValidator, MinValueValidator
 
 
+class FakturowniaModel(models.Model):
+    f_model_name = None
+
+
 class Month(models.Model):
     month_ago = datetime.datetime.today() - datetime.timedelta(days=30)
     default_year = month_ago.year
     default_month = month_ago.month
     year = models.IntegerField(default=default_year, validators=[MaxValueValidator(2099), MinValueValidator(2021)])
     month = models.IntegerField(default=default_month, validators=[MaxValueValidator(12), MinValueValidator(1)])
+    odoo_id = models.IntegerField(unique=True, null=True)
 
     @property
     def date_from(self):
@@ -29,6 +34,10 @@ class Month(models.Model):
     @property
     def production_docs(self):
         return sorted(self.productiondoc_set.all(), key=lambda x: x.first_sale_date)
+
+    @property
+    def produced_docs(self):
+        return [doc for doc in self.production_docs if not doc.do_not_produce]
 
     def __str__(self):
         return  str(self.month).zfill(2) + "." + str(self.year)
@@ -96,6 +105,8 @@ class ProductionDoc(models.Model):
     do_not_produce = models.BooleanField(default=False)
     number = models.CharField(max_length=8, null=True)
     rw_date = models.DateField(null=True)
+    pw_fakturownia_id = models.IntegerField(unique=True, null=True)
+    pw_fakturownia_json = models.JSONField(null=True)
 
     @property
     def production_positions(self):
@@ -116,24 +127,46 @@ class ProductionDoc(models.Model):
 
     @property
     def sale_value(self):
-        return
+        return sum([position.value_pln for position in self.produced_positions])
+
+    @property
+    def sale_value_display(self):
+        return str(round(self.sale_value, 2)) + " zł"
+
+
+    @property
+    def currency(self):
+        if self.production_positions:
+            return self.production_positions[0].currency
+
+    @property
+    def odoo_link(self):
+        return f"https://marceli2.odoo.com/web?debug=#id={self.odoo_id}&action=1242&model=x_production_docs&view_type=form&menu_id=459"
+
 
     def set_do_not_produce(self):
         self.do_not_produce = all(position.do_not_produce for position in self.production_positions)
         self.save()
 
     def __str__(self):
-        return self.order_number + " - " + self.month.__str__()
+        if self.order_name:
+            return self.order_name
+        else:
+            return self.order_number + " - " + self.month.__str__()
 
 
 class ProductionPosition(models.Model):
+    f_model_name = "warehouse_actions"
+
+
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     production_doc = models.ForeignKey(ProductionDoc, on_delete=models.CASCADE)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     raw_materials_value = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    final_quantity = models.IntegerField(null=True)
     unit_price = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     do_not_produce = models.BooleanField(default=False)
-
+    odoo_id = models.IntegerField(unique=True, null=True)
 
     @property
     def invoice_positions(self):
@@ -174,11 +207,40 @@ class ProductionPosition(models.Model):
 
     @property
     def sales_fraction(self):
-        pass
+        if self.production_doc.sale_value:
+            return self.value_pln / self.production_doc.sale_value
+        else:
+            return 0
+
+    @property
+    def sales_fraction_display(self):
+        return round(self.sales_fraction, 2)
+
+    @property
+    def currency(self):
+        if self.invoice_positions:
+            return self.invoice_positions[0].currency
+
+    @property
+    def exchange_rate(self):
+        if self.invoice_positions:
+            return self.invoice_positions[0].exchange_rate
+        else:
+            return 1
+
+    @property
+    def value_pln(self):
+        return self.sales_value * self.exchange_rate\
 
 
+    @property
+    def value_pln_display(self):
+        return str(round(self.value_pln, 2)) + " zł"
 
-
+    @property
+    def unit_price_float(self):
+        return float(self.unit_price)
+    
     def __str__(self):
         return self.product.name
 
@@ -190,6 +252,14 @@ class InvoicePosition(models.Model):
     price = models.DecimalField(max_digits=15, decimal_places=2)
     total_price = models.DecimalField(max_digits=15, decimal_places=2, null=True)
     production_position = models.ForeignKey(ProductionPosition, null=True, on_delete=models.CASCADE)
+
+    @property
+    def currency(self):
+        return self.invoice.currency
+
+    @property
+    def exchange_rate(self):
+        return self.invoice.exchange_rate
 
     def __str__(self):
         return self.product.name

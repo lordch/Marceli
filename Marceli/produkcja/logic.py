@@ -1,6 +1,8 @@
 from .models import ProductionDoc, RW
+from .odoo import Odoo
 import datetime
 
+odoo = Odoo()
 
 def format_date(date: datetime.date) -> str:
     return date.strftime("%Y-%m-%d")
@@ -38,5 +40,18 @@ def create_new_django_rw(doc: ProductionDoc):
     doc.save()
 
 
-def assign_positions_value(doc: ProductionDoc):
-    pass
+def assign_raw_materials_to_positions(doc: ProductionDoc):
+    value_left = doc.rw.value
+    positions = doc.produced_positions
+    if value_left and positions:
+        last_position = positions[-1]
+        for position in positions:
+            if position == last_position:
+                value = value_left
+            else:
+                value = round(float(position.sales_fraction) * float(doc.rw.value), 2)
+                value_left -= value
+                position.raw_materials_value = value
+                position.save()
+            if value:
+                odoo.update_position(position, {'x_studio_raw_materials_value': value})

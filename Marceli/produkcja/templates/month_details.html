@@ -16,27 +16,49 @@
 <h1>{{ month }}</h1>
 <p>date from: {{ month.date_from }}</p>
 <p>date to: {{ month.date_to }}</p>
-<a class="btn btn-primary" role="button" href="{% url 'get_invoices' month_id=month.id %}"> Get invoices</a>
-<a class="btn btn-danger" role="button" href="{% url 'delete_invoices' month_id=month.id %}"> Delete invoices</a>
-<a class="btn btn-warning" role="button" href="{% url 'upload_docs_to_odoo' month_id=month.id %}"> Upload to odoo</a>
-<a class="btn btn-warning" role="button" href="{% url 'check_production_status' month_id=month.id %}">Utwórz i ponumeruj RW</a>
-<a class="btn btn-warning" role="button" href="{% url 'update_rw_value' month_id=month.id %}">Uaktualnij wartość RW </a>
-
+<a class="btn btn-primary" role="button" href="{% url 'get_documents_from_fakturownia' month_id=month.id %}"> Pobierz dokumenty z F</a>
+<a class="btn btn-warning" role="button" href="{% url 'upload_docs_to_odoo' month_id=month.id %}">Wyślij dokumenty do O</a>
+<a class="btn btn-warning" role="button" href="{% url 'check_production_status' month_id=month.id %}">Sprawdź status produkcji w O</a>
+<a class="btn btn-warning" role="button" href="{% url 'create_and_update_rws' month_id=month.id %}">Utwórz i ponumeruj RW</a>
+<a class="btn btn-warning" role="button" href="{% url 'update_rw_value' month_id=month.id %}">Uaktualnij wartość RW</a>
+<a class="btn btn-warning" role="button" href="{% url 'create_pws' month_id=month.id %}">Stwórz PW </a>
+<br>
+<a class="btn btn-danger" role="button" href="{% url 'delete_documents' month_id=month.id %}"> Delete invoices</a>
 
 <br>
 <div class="container">
     <h2>Production docs:</h2>
-    <ul>
-        {% for doc in month.production_docs %}
-        <li>
-            <a href="{% url 'prod_doc_details' doc.id %}">{{doc}}</a>
-            {{doc.first_sale_date}}
-            {% if doc.rw %} {{doc.rw}} {% endif %}
-            {% if doc.do_not_produce %} Nie produkuj {% endif %}
 
-        </li>
-        {% endfor %}
-    </ul>
+    <table class="table table-striped">
+    <thead>
+    <tr>
+        <th scope="col">Zamówienie</th>
+        <th scope="col">Data 1 sprzed</th>
+        <th scope="col">Nr RW</th>
+        <th scope="col" style="text-align: right;">Wart sprzed</th>
+        <th scope="col" style="text-align: right;">Wart RW</th>
+        <th scope="col">Nie produkuj</th>
+
+    </tr>
+    </thead>
+    <tbody>
+    {% for doc in month.production_docs %}
+    <tr>
+        <td><a href="{% url 'prod_doc_details' doc.id %}">{{doc}} </a></td>
+        <td>{{doc.first_sale_date}}</td>
+        <td>{% if doc.rw %} {{doc.rw}} {% endif %}</td>
+        <td style="text-align: right;">{{doc.sale_value_display}}</td>
+        <td style="text-align: right;">{% if doc.rw.value %} {{doc.rw.value}} zł {% endif %}</td>
+        <td>{% if doc.do_not_produce %} Nie produkuj {% endif %}</td>
+
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+
+
+
 </div>
 
 

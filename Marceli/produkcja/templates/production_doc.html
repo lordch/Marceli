@@ -12,15 +12,23 @@
 <body>
 <h1>{{prod_doc}}</h1>
 <p><strong>Data pierwszej sprzedaży: </strong> {{prod_doc.first_sale_date}}</p>
+<p><strong>Nazwa zam: </strong> {{prod_doc.order_name}}</p>
+<p><strong>Wartość sprzedaży: </strong> {{prod_doc.sale_value_display}}</p>
+<p><strong>Wartość rw: </strong> {{prod_doc.rw.value}} zł</p>
+<p><strong>Odoo: </strong> <a href="{{ prod_doc.odoo_link }}"> link </a></p>
 <h2>Pozycje:</h2>
 <table class="table table-striped">
     <thead>
     <tr>
         <th scope="col">Produkt</th>
         <th scope="col">Ilość</th>
+        <th scope="col">Ilość prod</th>
         <th scope="col">Saldo</th>
         <th scope="col">Data pierwszej sprzedazy</th>
         <th scope="col">Wartość</th>
+        <th scope="col">Waluta</th>
+        <th scope="col">Część sprzedaży</th>
+        <th scope="col">Wartość surowca</th>
         <th scope="col">Nie produkuj</th>
     </tr>
     </thead>
@@ -30,8 +38,12 @@
         <td><a href="{% url 'prod_pos_details' position.id %}">{{position.product}}</a> </td>
         <td>{{position.quantity}}</td>
         <td>{{position.balance}}</td>
+        <td>{{position.final_quantity}}</td>
         <td>{{position.first_sale_date}}</td>
         <td>{{position.sales_value}}</td>
+        <td>{{position.currency}}</td>
+        <td>{{position.sales_fraction_display}}</td>
+        <td>{% if not position.do_not_produce %} {{position.raw_materials_value}}{% endif %}</td>
         <td>{{position.do_not_produce}}</td>
     </tr>
     {% endfor %}

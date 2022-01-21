@@ -5,10 +5,11 @@ from django.http import HttpResponse
 from django.template import loader
 from django.core.exceptions import ObjectDoesNotExist
 from .models import Month, Invoice, Product, InvoicePosition, ProductionDoc, ProductionPosition, RW
-from .fakturownia import request_invoices, request_rws, get_product_balance, create_fakturownia_rw, update_fakturownia_rw, get_fakturownia_rw_value
-from .odoo import create_production, update_production_status, create_odoo_rw, update_odoo_pd, update_odoo_rw
-from .logic import generate_rw_numbers_dates, create_new_django_rw
+from .fakturownia import request_invoices, request_rws, get_product_balance, create_fakturownia_rw, update_fakturownia_rw, get_fakturownia_rw_value, create_fakturownia_pw
+from .odoo import Odoo
+from .logic import generate_rw_numbers_dates, create_new_django_rw, assign_raw_materials_to_positions
 
+odoo = Odoo()
 
 def index(request):
     months = Month.objects.all()
@@ -39,7 +40,7 @@ def prod_pos_details(request, prod_pos_id):
     return render(request, 'production_position.html', {'prod_pos': prod_pos})
 
 
-def get_invoices(request, month_id):
+def get_documents_from_fakturownia(request, month_id):
     month = Month.objects.get(pk=month_id)
     # fetch invoices from fakturownia for given month
     documents = request_invoices(month.date_from, month.date_to)
@@ -63,16 +64,18 @@ def get_invoices(request, month_id):
         # create invoice positions
         for position in document['positions']:
             try:
-                product = Product.objects.get(fakturownia_id=position['product_id'])
+                product = Product.objects.get(fakturownia_id=position['product_id']) # get product from db
             except ObjectDoesNotExist:
-                product = Product.objects.create(name=position['name'], fakturownia_id=position['product_id'])
+                product = Product.objects.create(name=position['name'], fakturownia_id=position['product_id']) # create product if doesn't exist
 
+            # calculate discount
             discount = position['discount']
             if discount is None:
                 discount = 0
             else:
                 discount = float(discount)
 
+            # create invoice positions
             InvoicePosition.objects.create(
                 product=product,
                 invoice=i,
@@ -84,10 +87,12 @@ def get_invoices(request, month_id):
     # create production docs for sales from product warehouse
     invoices = month.invoice_set.all()
     for invoice in invoices:
-        if invoice.warehouse_id == 6033:
+        if invoice.warehouse_id == 6033: # only sales from product warehouse
             try:
+                # link invoice position to production doc if exist for given order number
                 production_doc = ProductionDoc.objects.get(month=month, order_number=invoice.order_id)
             except ObjectDoesNotExist:
+                # create production doc if it doesn't exist
                 production_doc = ProductionDoc.objects.create(month=month, order_number=invoice.order_id)
 
             # crate production positions and connect them with invoice positions
@@ -129,7 +134,7 @@ def get_invoices(request, month_id):
     return redirect('detail', month_id=month_id)
 
 
-def delete_invoices(request, month_id):
+def delete_documents(request, month_id):
     month = Month.objects.get(pk=month_id)
     Invoice.objects.filter(month=month).delete()
     ProductionDoc.objects.filter(month=month).delete()
@@ -139,7 +144,7 @@ def delete_invoices(request, month_id):
 
 def upload_docs_to_odoo(request, month_id):
     month = Month.objects.get(pk=month_id)
-    create_production(month)
+    odoo.create_production(month)
     return redirect('detail', month_id=month_id)
 
 
@@ -147,13 +152,22 @@ def check_production_status(request, month_id):
     month = Month.objects.get(pk=month_id)
 
     for pd in month.production_docs:
-        update_production_status(pd)
+        print(f"checking for PD: {pd} status")
+        odoo.get_production_status(pd)
+        for position in pd.production_positions:
+            print(f"checking for PP: {position} status")
+            odoo.get_production_position_status(position)
 
     produced_pds = [pd for pd in month.production_docs if not pd.do_not_produce]
     generate_rw_numbers_dates(produced_pds)
 
+    return redirect('detail', month_id=month_id)
 
-    for doc in produced_pds:
+
+def create_and_update_rws(request, month_id):
+    month = Month.objects.get(pk=month_id)
+
+    for doc in month.produced_docs:
         if not doc.rw:
 
             create_new_django_rw(doc)
@@ -161,11 +175,11 @@ def check_production_status(request, month_id):
             doc.rw.fakturownia_id = create_fakturownia_rw(doc.rw)
             doc.rw.save()
 
-            doc.rw.odoo_id = create_odoo_rw(doc.rw)
+            doc.rw.odoo_id = odoo.create_rw(doc.rw)
             doc.rw.save()
 
             pd_fields = {'x_rw': doc.rw.odoo_id}
-            update_odoo_pd(doc, pd_fields)
+            odoo.update_pd(doc, pd_fields)
 
         else:
             rw = doc.rw
@@ -174,19 +188,28 @@ def check_production_status(request, month_id):
                 'x_number': rw.number,
                 'x_date': rw.issue_date,
             }
-            update_odoo_rw(rw, fields)
-            # update_fakturownia_rw(rw)
+            odoo.update_rw(rw, fields)
+            update_fakturownia_rw(rw)
 
     return redirect('detail', month_id=month_id)
 
 
 def update_rw_value(request, month_id):
     month = Month.objects.get(pk=month_id)
-    print("url's workin")
-    produced_pds = [pd for pd in month.production_docs if not pd.do_not_produce]
-    for doc in produced_pds:
+    for doc in month.produced_docs:
         rw = doc.rw
-        rw.value = get_fakturownia_rw_value(rw)
+        value = get_fakturownia_rw_value(rw)
+        rw.value = value
         rw.save()
+        odoo.update_rw(rw, {'x_studio_value': value})
+        assign_raw_materials_to_positions(doc)
 
+    return redirect('detail', month_id=month_id)
+
+
+def create_pws(request, month_id: int):
+    month = Month.objects.get(pk=month_id)
+    for doc in month.produced_docs[:2]:
+        doc.pw_fakturownia_id = create_fakturownia_pw(doc)
+        doc.save()
     return redirect('detail', month_id=month_id)
